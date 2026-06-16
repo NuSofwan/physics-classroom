@@ -9,8 +9,10 @@ services:
     startCommand: npm start
     healthCheckPath: /
     envVars:
+      # Admin password. Same as the app's built-in default — change this value
+      # (or set it in the Render dashboard) to use your own.
       - key: ADMIN_PASSWORD
-        sync: false   # set your own value in the Render dashboard
+        value: physics2026
       - key: NODE_VERSION
         value: 20
     # Free instances have an ephemeral filesystem (data resets on redeploy).
