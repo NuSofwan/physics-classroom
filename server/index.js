@@ -4,6 +4,7 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+import { initDb } from './db.js';
 import authRoutes from './routes/auth.js';
 import classroomRoutes from './routes/classrooms.js';
 import videoRoutes from './routes/videos.js';
@@ -41,9 +42,17 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(distPath, 'index.html'));
 });
 
-app.listen(PORT, HOST, () => {
-  console.log(`\n🎓 PhysicsClassroom Server running at http://localhost:${PORT}`);
-  console.log(`🌐 On your network (open on phone): http://<your-computer-ip>:${PORT}`);
-  console.log(`📚 Admin password: ${process.env.ADMIN_PASSWORD || 'physics2026'}`);
-  console.log(`\nPress Ctrl+C to stop\n`);
-});
+// Connect to the database (if configured) before accepting traffic.
+initDb()
+  .catch((err) => {
+    console.error('❌ Database init failed:', err.message);
+    console.error('   Falling back to local JSON file storage.');
+  })
+  .finally(() => {
+    app.listen(PORT, HOST, () => {
+      console.log(`\n🎓 PhysicsClassroom Server running at http://localhost:${PORT}`);
+      console.log(`🌐 On your network (open on phone): http://<your-computer-ip>:${PORT}`);
+      console.log(`📚 Admin password: ${process.env.ADMIN_PASSWORD || 'physics2026'}`);
+      console.log(`\nPress Ctrl+C to stop\n`);
+    });
+  });

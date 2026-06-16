@@ -7,20 +7,20 @@ import db from '../db.js';
 const router = Router();
 
 // Get videos for a classroom (admin)
-router.get('/classroom/:classroomId', requireAdmin, (req, res) => {
+router.get('/classroom/:classroomId', requireAdmin, async (req, res) => {
   const { classroomId } = req.params;
 
-  const classroom = db.getClassroomById(classroomId);
+  const classroom = await db.getClassroomById(classroomId);
   if (!classroom) {
     return res.status(404).json({ error: 'ไม่พบกลุ่มนี้' });
   }
 
-  const videos = db.getVideosByClassroom(classroomId);
+  const videos = await db.getVideosByClassroom(classroomId);
   res.json({ classroom, videos });
 });
 
 // Add video to classroom (admin)
-router.post('/classroom/:classroomId', requireAdmin, (req, res) => {
+router.post('/classroom/:classroomId', requireAdmin, async (req, res) => {
   const { classroomId } = req.params;
   const { title, description, google_drive_file_id, duration } = req.body;
 
@@ -28,12 +28,12 @@ router.post('/classroom/:classroomId', requireAdmin, (req, res) => {
     return res.status(400).json({ error: 'กรุณาระบุชื่อวีดีโอและ Google Drive File ID' });
   }
 
-  const classroom = db.getClassroomById(classroomId);
+  const classroom = await db.getClassroomById(classroomId);
   if (!classroom) {
     return res.status(404).json({ error: 'ไม่พบกลุ่มนี้' });
   }
 
-  const orderIndex = db.getMaxVideoOrder(classroomId) + 1;
+  const orderIndex = (await db.getMaxVideoOrder(classroomId)) + 1;
 
   const video = {
     id: uuidv4(),
@@ -48,23 +48,23 @@ router.post('/classroom/:classroomId', requireAdmin, (req, res) => {
     updated_at: new Date().toISOString(),
   };
 
-  db.createVideo(video);
+  await db.createVideo(video);
   res.status(201).json({ video });
 });
 
 // Update video (admin)
-router.put('/:id', requireAdmin, (req, res) => {
+router.put('/:id', requireAdmin, async (req, res) => {
   const { id } = req.params;
   const { title, description, google_drive_file_id, duration, order_index } = req.body;
 
-  const existing = db.getVideoById(id);
+  const existing = await db.getVideoById(id);
   if (!existing) {
     return res.status(404).json({ error: 'ไม่พบวีดีโอนี้' });
   }
 
   const newFileId = google_drive_file_id || existing.google_drive_file_id;
 
-  const updated = db.updateVideo(id, {
+  const updated = await db.updateVideo(id, {
     title: title || existing.title,
     description: description !== undefined ? description : existing.description,
     google_drive_file_id: newFileId,
@@ -77,15 +77,15 @@ router.put('/:id', requireAdmin, (req, res) => {
 });
 
 // Delete video (admin)
-router.delete('/:id', requireAdmin, (req, res) => {
+router.delete('/:id', requireAdmin, async (req, res) => {
   const { id } = req.params;
 
-  const existing = db.getVideoById(id);
+  const existing = await db.getVideoById(id);
   if (!existing) {
     return res.status(404).json({ error: 'ไม่พบวีดีโอนี้' });
   }
 
-  db.deleteVideo(id);
+  await db.deleteVideo(id);
   res.json({ message: 'ลบวีดีโอเรียบร้อยแล้ว' });
 });
 
@@ -125,12 +125,12 @@ router.get('/:id/stream', async (req, res) => {
   const { id } = req.params;
   const { code } = req.query;
 
-  const video = db.getVideoById(id);
+  const video = await db.getVideoById(id);
   if (!video) {
     return res.status(404).json({ error: 'ไม่พบวีดีโอนี้' });
   }
 
-  const classroom = db.getClassroomById(video.classroom_id);
+  const classroom = await db.getClassroomById(video.classroom_id);
   if (!classroom) {
     return res.status(404).json({ error: 'ไม่พบกลุ่มนี้' });
   }
@@ -183,7 +183,7 @@ router.get('/:id/stream', async (req, res) => {
 });
 
 // Reorder videos within a classroom (admin)
-router.put('/classroom/:classroomId/reorder', requireAdmin, (req, res) => {
+router.put('/classroom/:classroomId/reorder', requireAdmin, async (req, res) => {
   const { classroomId } = req.params;
   const { order } = req.body; // array of video ids in the desired order
 
@@ -191,32 +191,32 @@ router.put('/classroom/:classroomId/reorder', requireAdmin, (req, res) => {
     return res.status(400).json({ error: 'รูปแบบลำดับไม่ถูกต้อง' });
   }
 
-  const classroom = db.getClassroomById(classroomId);
+  const classroom = await db.getClassroomById(classroomId);
   if (!classroom) {
     return res.status(404).json({ error: 'ไม่พบกลุ่มนี้' });
   }
 
-  order.forEach((videoId, idx) => {
-    const v = db.getVideoById(videoId);
+  for (let idx = 0; idx < order.length; idx++) {
+    const v = await db.getVideoById(order[idx]);
     if (v && v.classroom_id === classroomId) {
-      db.updateVideo(videoId, { order_index: idx + 1 });
+      await db.updateVideo(order[idx], { order_index: idx + 1 });
     }
-  });
+  }
 
-  res.json({ videos: db.getVideosByClassroom(classroomId) });
+  res.json({ videos: await db.getVideosByClassroom(classroomId) });
 });
 
 // Get video info (public - for students with code)
-router.get('/:id/info', (req, res) => {
+router.get('/:id/info', async (req, res) => {
   const { id } = req.params;
   const { code } = req.query;
 
-  const video = db.getVideoById(id);
+  const video = await db.getVideoById(id);
   if (!video) {
     return res.status(404).json({ error: 'ไม่พบวีดีโอนี้' });
   }
 
-  const classroom = db.getClassroomById(video.classroom_id);
+  const classroom = await db.getClassroomById(video.classroom_id);
   if (!classroom) {
     return res.status(404).json({ error: 'ไม่พบกลุ่มนี้' });
   }

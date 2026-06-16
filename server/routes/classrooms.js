@@ -16,13 +16,13 @@ function generateCode() {
 }
 
 // Get all classrooms (admin only)
-router.get('/', requireAdmin, (req, res) => {
-  const classrooms = db.getAllClassrooms();
+router.get('/', requireAdmin, async (req, res) => {
+  const classrooms = await db.getAllClassrooms();
   res.json({ classrooms });
 });
 
 // Create a new classroom (admin only)
-router.post('/', requireAdmin, (req, res) => {
+router.post('/', requireAdmin, async (req, res) => {
   const { name, description, cover_color } = req.body;
 
   if (!name || name.trim().length === 0) {
@@ -34,7 +34,7 @@ router.post('/', requireAdmin, (req, res) => {
   do {
     code = generateCode();
     attempts++;
-  } while (db.getClassroomByCode(code) && attempts < 10);
+  } while ((await db.getClassroomByCode(code)) && attempts < 10);
 
   const classroom = {
     id: uuidv4(),
@@ -46,21 +46,21 @@ router.post('/', requireAdmin, (req, res) => {
     updated_at: new Date().toISOString(),
   };
 
-  db.createClassroom(classroom);
+  await db.createClassroom(classroom);
   res.status(201).json({ classroom });
 });
 
 // Update a classroom (admin only)
-router.put('/:id', requireAdmin, (req, res) => {
+router.put('/:id', requireAdmin, async (req, res) => {
   const { id } = req.params;
   const { name, description, cover_color } = req.body;
 
-  const existing = db.getClassroomById(id);
+  const existing = await db.getClassroomById(id);
   if (!existing) {
     return res.status(404).json({ error: 'ไม่พบกลุ่มนี้' });
   }
 
-  const updated = db.updateClassroom(id, {
+  const updated = await db.updateClassroom(id, {
     name: name || existing.name,
     description: description !== undefined ? description : existing.description,
     cover_color: cover_color || existing.cover_color,
@@ -70,28 +70,28 @@ router.put('/:id', requireAdmin, (req, res) => {
 });
 
 // Delete a classroom (admin only)
-router.delete('/:id', requireAdmin, (req, res) => {
+router.delete('/:id', requireAdmin, async (req, res) => {
   const { id } = req.params;
 
-  const existing = db.getClassroomById(id);
+  const existing = await db.getClassroomById(id);
   if (!existing) {
     return res.status(404).json({ error: 'ไม่พบกลุ่มนี้' });
   }
 
-  db.deleteClassroom(id);
+  await db.deleteClassroom(id);
   res.json({ message: 'ลบกลุ่มเรียบร้อยแล้ว' });
 });
 
 // Get classroom by code (public - for students)
-router.get('/code/:code', (req, res) => {
+router.get('/code/:code', async (req, res) => {
   const { code } = req.params;
-  const classroom = db.getClassroomByCode(code.toUpperCase());
+  const classroom = await db.getClassroomByCode(code.toUpperCase());
 
   if (!classroom) {
     return res.status(404).json({ error: 'ไม่พบกลุ่มที่ตรงกับรหัสนี้' });
   }
 
-  const videos = db.getVideosByClassroom(classroom.id).map(v => ({
+  const videos = (await db.getVideosByClassroom(classroom.id)).map(v => ({
     id: v.id,
     title: v.title,
     description: v.description,

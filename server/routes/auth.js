@@ -27,14 +27,14 @@ router.post('/admin-login', (req, res) => {
 });
 
 // Student join classroom by code
-router.post('/join-classroom', (req, res) => {
+router.post('/join-classroom', async (req, res) => {
   const { code } = req.body;
 
   if (!code || code.trim().length < 4) {
     return res.status(400).json({ error: 'กรุณากรอกรหัสกลุ่ม' });
   }
 
-  const classroom = db.getClassroomByCode(code.trim().toUpperCase());
+  const classroom = await db.getClassroomByCode(code.trim().toUpperCase());
 
   if (!classroom) {
     return res.status(404).json({ error: 'ไม่พบกลุ่มที่ตรงกับรหัสนี้' });

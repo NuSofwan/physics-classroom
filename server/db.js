@@ -1,6 +1,7 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import { MongoClient } from 'mongodb';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -11,19 +12,16 @@ if (!fs.existsSync(dataDir)) {
 }
 
 const dbPath = path.join(dataDir, 'physics-classroom.json');
+const defaultData = { classrooms: [], videos: [] };
 
-// Default data structure
-const defaultData = {
-  classrooms: [],
-  videos: [],
-};
-
-// Load data from file
+// ─────────────────────────────────────────────────────────────────────────
+// File backend (used for local dev when MONGODB_URI is not set).
+// Data is NOT persistent on ephemeral hosts — see README.
+// ─────────────────────────────────────────────────────────────────────────
 function loadData() {
   try {
     if (fs.existsSync(dbPath)) {
-      const raw = fs.readFileSync(dbPath, 'utf-8');
-      return JSON.parse(raw);
+      return JSON.parse(fs.readFileSync(dbPath, 'utf-8'));
     }
   } catch (err) {
     console.error('Error loading database:', err.message);
@@ -31,104 +29,209 @@ function loadData() {
   return { ...defaultData };
 }
 
-// Save data to file
 function saveData(data) {
   fs.writeFileSync(dbPath, JSON.stringify(data, null, 2), 'utf-8');
 }
 
-// ── Database API (mimics simple query patterns) ──
-
-const db = {
-  // Get all data
-  getData() {
-    return loadData();
-  },
-
-  // ── Classrooms ──
-  getAllClassrooms() {
+const fileBackend = {
+  async getAllClassrooms() {
     const data = loadData();
-    return data.classrooms.map(c => {
-      const videoCount = data.videos.filter(v => v.classroom_id === c.id).length;
-      return { ...c, video_count: videoCount };
-    }).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    return data.classrooms
+      .map((c) => ({
+        ...c,
+        video_count: data.videos.filter((v) => v.classroom_id === c.id).length,
+      }))
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   },
-
-  getClassroomById(id) {
-    const data = loadData();
-    return data.classrooms.find(c => c.id === id) || null;
+  async getClassroomById(id) {
+    return loadData().classrooms.find((c) => c.id === id) || null;
   },
-
-  getClassroomByCode(code) {
-    const data = loadData();
-    return data.classrooms.find(c => c.code === code) || null;
+  async getClassroomByCode(code) {
+    return loadData().classrooms.find((c) => c.code === code) || null;
   },
-
-  createClassroom(classroom) {
+  async createClassroom(classroom) {
     const data = loadData();
     data.classrooms.push(classroom);
     saveData(data);
     return classroom;
   },
-
-  updateClassroom(id, updates) {
+  async updateClassroom(id, updates) {
     const data = loadData();
-    const idx = data.classrooms.findIndex(c => c.id === id);
+    const idx = data.classrooms.findIndex((c) => c.id === id);
     if (idx === -1) return null;
     data.classrooms[idx] = { ...data.classrooms[idx], ...updates, updated_at: new Date().toISOString() };
     saveData(data);
     return data.classrooms[idx];
   },
-
-  deleteClassroom(id) {
+  async deleteClassroom(id) {
     const data = loadData();
-    data.classrooms = data.classrooms.filter(c => c.id !== id);
-    // Also delete associated videos
-    data.videos = data.videos.filter(v => v.classroom_id !== id);
+    data.classrooms = data.classrooms.filter((c) => c.id !== id);
+    data.videos = data.videos.filter((v) => v.classroom_id !== id);
     saveData(data);
     return true;
   },
-
-  // ── Videos ──
-  getVideosByClassroom(classroomId) {
-    const data = loadData();
-    return data.videos
-      .filter(v => v.classroom_id === classroomId)
+  async getVideosByClassroom(classroomId) {
+    return loadData()
+      .videos.filter((v) => v.classroom_id === classroomId)
       .sort((a, b) => a.order_index - b.order_index || new Date(a.created_at) - new Date(b.created_at));
   },
-
-  getVideoById(id) {
-    const data = loadData();
-    return data.videos.find(v => v.id === id) || null;
+  async getVideoById(id) {
+    return loadData().videos.find((v) => v.id === id) || null;
   },
-
-  createVideo(video) {
+  async createVideo(video) {
     const data = loadData();
     data.videos.push(video);
     saveData(data);
     return video;
   },
-
-  updateVideo(id, updates) {
+  async updateVideo(id, updates) {
     const data = loadData();
-    const idx = data.videos.findIndex(v => v.id === id);
+    const idx = data.videos.findIndex((v) => v.id === id);
     if (idx === -1) return null;
     data.videos[idx] = { ...data.videos[idx], ...updates, updated_at: new Date().toISOString() };
     saveData(data);
     return data.videos[idx];
   },
-
-  deleteVideo(id) {
+  async deleteVideo(id) {
     const data = loadData();
-    data.videos = data.videos.filter(v => v.id !== id);
+    data.videos = data.videos.filter((v) => v.id !== id);
     saveData(data);
     return true;
   },
-
-  getMaxVideoOrder(classroomId) {
-    const videos = this.getVideosByClassroom(classroomId);
+  async getMaxVideoOrder(classroomId) {
+    const videos = await this.getVideosByClassroom(classroomId);
     if (videos.length === 0) return 0;
-    return Math.max(...videos.map(v => v.order_index || 0));
+    return Math.max(...videos.map((v) => v.order_index || 0));
   },
+};
+
+// ─────────────────────────────────────────────────────────────────────────
+// MongoDB backend (used in production when MONGODB_URI is set). Persistent.
+// ─────────────────────────────────────────────────────────────────────────
+function makeMongoBackend(client, dbName) {
+  const database = client.db(dbName);
+  const classroomsCol = database.collection('classrooms');
+  const videosCol = database.collection('videos');
+  const strip = { projection: { _id: 0 } };
+
+  return {
+    async getAllClassrooms() {
+      const classrooms = await classroomsCol.find({}, strip).sort({ created_at: -1 }).toArray();
+      return Promise.all(
+        classrooms.map(async (c) => ({
+          ...c,
+          video_count: await videosCol.countDocuments({ classroom_id: c.id }),
+        }))
+      );
+    },
+    async getClassroomById(id) {
+      return classroomsCol.findOne({ id }, strip);
+    },
+    async getClassroomByCode(code) {
+      return classroomsCol.findOne({ code }, strip);
+    },
+    async createClassroom(classroom) {
+      await classroomsCol.insertOne({ ...classroom });
+      return classroom;
+    },
+    async updateClassroom(id, updates) {
+      const result = await classroomsCol.findOneAndUpdate(
+        { id },
+        { $set: { ...updates, updated_at: new Date().toISOString() } },
+        { returnDocument: 'after', projection: { _id: 0 } }
+      );
+      return result || null;
+    },
+    async deleteClassroom(id) {
+      await classroomsCol.deleteOne({ id });
+      await videosCol.deleteMany({ classroom_id: id });
+      return true;
+    },
+    async getVideosByClassroom(classroomId) {
+      return videosCol
+        .find({ classroom_id: classroomId }, strip)
+        .sort({ order_index: 1, created_at: 1 })
+        .toArray();
+    },
+    async getVideoById(id) {
+      return videosCol.findOne({ id }, strip);
+    },
+    async createVideo(video) {
+      await videosCol.insertOne({ ...video });
+      return video;
+    },
+    async updateVideo(id, updates) {
+      const result = await videosCol.findOneAndUpdate(
+        { id },
+        { $set: { ...updates, updated_at: new Date().toISOString() } },
+        { returnDocument: 'after', projection: { _id: 0 } }
+      );
+      return result || null;
+    },
+    async deleteVideo(id) {
+      await videosCol.deleteOne({ id });
+      return true;
+    },
+    async getMaxVideoOrder(classroomId) {
+      const top = await videosCol
+        .find({ classroom_id: classroomId })
+        .sort({ order_index: -1 })
+        .limit(1)
+        .toArray();
+      return top.length ? top[0].order_index || 0 : 0;
+    },
+    _collections: { classroomsCol, videosCol },
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Backend selection + one-time initialisation.
+// ─────────────────────────────────────────────────────────────────────────
+let backend = fileBackend;
+
+export async function initDb() {
+  const uri = process.env.MONGODB_URI;
+  if (!uri) {
+    console.log('💾 Database: local JSON file (set MONGODB_URI for persistent storage)');
+    return;
+  }
+
+  const dbName = process.env.MONGODB_DB || 'physics_classroom';
+  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 15000 });
+  await client.connect();
+  const mongo = makeMongoBackend(client, dbName);
+
+  // Seed the demo classroom from the bundled JSON on first run (empty DB).
+  const count = await mongo._collections.classroomsCol.countDocuments();
+  if (count === 0) {
+    const seed = loadData();
+    if (seed.classrooms?.length) {
+      await mongo._collections.classroomsCol.insertMany(seed.classrooms.map((c) => ({ ...c })));
+      if (seed.videos?.length) {
+        await mongo._collections.videosCol.insertMany(seed.videos.map((v) => ({ ...v })));
+      }
+      console.log(`🌱 Seeded ${seed.classrooms.length} classroom(s) into MongoDB`);
+    }
+  }
+
+  backend = mongo;
+  console.log(`💾 Database: MongoDB (${dbName}) — persistent ✅`);
+}
+
+// Proxy that always forwards to the currently selected backend.
+const db = {
+  getAllClassrooms: (...a) => backend.getAllClassrooms(...a),
+  getClassroomById: (...a) => backend.getClassroomById(...a),
+  getClassroomByCode: (...a) => backend.getClassroomByCode(...a),
+  createClassroom: (...a) => backend.createClassroom(...a),
+  updateClassroom: (...a) => backend.updateClassroom(...a),
+  deleteClassroom: (...a) => backend.deleteClassroom(...a),
+  getVideosByClassroom: (...a) => backend.getVideosByClassroom(...a),
+  getVideoById: (...a) => backend.getVideoById(...a),
+  createVideo: (...a) => backend.createVideo(...a),
+  updateVideo: (...a) => backend.updateVideo(...a),
+  deleteVideo: (...a) => backend.deleteVideo(...a),
+  getMaxVideoOrder: (...a) => backend.getMaxVideoOrder(...a),
 };
 
 export default db;
