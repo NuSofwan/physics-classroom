@@ -15,9 +15,11 @@ services:
         value: physics2026
       - key: NODE_VERSION
         value: 20
-    # Free instances have an ephemeral filesystem (data resets on redeploy).
-    # Attach a persistent disk so classrooms/videos survive restarts:
-    disk:
-      name: data
-      mountPath: /opt/render/project/src/data
-      sizeGB: 1
+    # NOTE: the free plan has an ephemeral filesystem — classrooms/videos added
+    # at runtime reset on each redeploy/cold start. To keep data permanently,
+    # upgrade this service to a paid plan and uncomment the disk below
+    # (persistent disks are not available on the free plan):
+    # disk:
+    #   name: data
+    #   mountPath: /opt/render/project/src/data
+    #   sizeGB: 1
