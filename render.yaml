@@ -1,0 +1,21 @@
+# Deploy to Render.com — push this repo to GitHub, then on Render choose
+# "New > Blueprint" and point it at the repo. Render reads this file.
+services:
+  - type: web
+    name: physics-classroom
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: ADMIN_PASSWORD
+        sync: false   # set your own value in the Render dashboard
+      - key: NODE_VERSION
+        value: 20
+    # Free instances have an ephemeral filesystem (data resets on redeploy).
+    # Attach a persistent disk so classrooms/videos survive restarts:
+    disk:
+      name: data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1

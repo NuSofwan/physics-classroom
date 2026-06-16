@@ -53,25 +53,29 @@ export async function initStudentClassroom(navigateTo, classroomCode) {
         </div>
       ` : `
         <div class="video-list">
-          ${videos.map((v, i) => `
+          ${videos.map((v, i) => {
+            const watched = !!localStorage.getItem(`resume_${v.id}`);
+            return `
             <div class="video-item" data-id="${v.id}" data-code="${classroomCode}">
               <div class="video-number">${i + 1}</div>
               <div class="video-thumbnail">
-                <div style="font-size: 2.5rem; color: var(--text-muted);">🎬</div>
+                <div class="thumb-fallback" style="font-size: 2.5rem; color: var(--text-muted);">🎬</div>
                 <div class="play-overlay">
                   <div class="play-icon">▶</div>
                 </div>
+                ${watched ? '<span class="watched-badge">▸ ดูค้างไว้</span>' : ''}
               </div>
               <div class="video-info">
                 <div class="video-title">${escapeHtml(v.title)}</div>
                 ${v.description ? `<div class="video-desc">${escapeHtml(v.description)}</div>` : ''}
                 <div class="video-meta">
-                  ${v.duration ? `<span>⏱ ${v.duration}</span>` : ''}
+                  ${v.duration ? `<span>⏱ ${escapeHtml(v.duration)}</span>` : ''}
                   <span>📅 ${formatDate(v.created_at)}</span>
                 </div>
               </div>
             </div>
-          `).join('')}
+          `;
+          }).join('')}
         </div>
       `}
     `;

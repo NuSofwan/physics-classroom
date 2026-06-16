@@ -89,6 +89,37 @@ router.delete('/:id', requireAdmin, (req, res) => {
   res.json({ message: 'ลบวีดีโอเรียบร้อยแล้ว' });
 });
 
+// Fetch from Google Drive following the large-file "virus scan" confirmation
+// page when necessary. Returns a Web Response whose body can be streamed.
+async function fetchFromDrive(fileId, range) {
+  const headers = {
+    'User-Agent': 'Mozilla/5.0 (compatible; PhysicsClassroom/1.0)',
+  };
+  // Only forward a Range header when the client actually sent one — an empty
+  // Range header makes some upstreams reply with an error instead of the file.
+  if (range) headers['Range'] = range;
+
+  const baseUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
+  let response = await fetch(baseUrl, { redirect: 'follow', headers });
+
+  // Large files return an HTML interstitial instead of the binary. Parse the
+  // confirmation token from it and retry, otherwise fall back to confirm=t.
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('text/html')) {
+    const html = await response.text();
+    const tokenMatch = html.match(/confirm=([0-9A-Za-z_-]+)/);
+    const uuidMatch = html.match(/name="uuid" value="([^"]+)"/);
+    const token = tokenMatch ? tokenMatch[1] : 't';
+
+    let confirmUrl = `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=${token}`;
+    if (uuidMatch) confirmUrl += `&uuid=${uuidMatch[1]}`;
+
+    response = await fetch(confirmUrl, { redirect: 'follow', headers });
+  }
+
+  return response;
+}
+
 // Stream video from Google Drive (proxy) - accessible by students with valid classroom code
 router.get('/:id/stream', async (req, res) => {
   const { id } = req.params;
@@ -99,7 +130,6 @@ router.get('/:id/stream', async (req, res) => {
     return res.status(404).json({ error: 'ไม่พบวีดีโอนี้' });
   }
 
-  // Get the classroom to validate code
   const classroom = db.getClassroomById(video.classroom_id);
   if (!classroom) {
     return res.status(404).json({ error: 'ไม่พบกลุ่มนี้' });
@@ -111,56 +141,69 @@ router.get('/:id/stream', async (req, res) => {
   }
 
   try {
-    // Use Google Drive direct download URL
-    const driveUrl = `https://drive.google.com/uc?export=download&id=${video.google_drive_file_id}`;
+    const response = await fetchFromDrive(video.google_drive_file_id, req.headers.range);
 
-    const response = await fetch(driveUrl, {
-      redirect: 'follow',
-      headers: {
-        'Range': req.headers.range || '',
-      }
-    });
-
-    // If Google redirects to a virus scan warning page for large files,
-    // we need to follow the confirm link
-    if (response.headers.get('content-type')?.includes('text/html')) {
-      const previewUrl = `https://drive.google.com/uc?export=download&id=${video.google_drive_file_id}&confirm=t`;
-      const response2 = await fetch(previewUrl, {
-        redirect: 'follow',
-        headers: {
-          'Range': req.headers.range || '',
-        }
-      });
-
-      res.setHeader('Content-Type', response2.headers.get('content-type') || 'video/mp4');
-      res.setHeader('Accept-Ranges', 'bytes');
-      if (response2.headers.get('content-length')) {
-        res.setHeader('Content-Length', response2.headers.get('content-length'));
-      }
-      if (response2.headers.get('content-range')) {
-        res.setHeader('Content-Range', response2.headers.get('content-range'));
-        res.status(206);
-      }
-
-      Readable.fromWeb(response2.body).pipe(res);
-      return;
+    if (!response.ok && response.status !== 206) {
+      console.error('Drive responded with', response.status);
+      return res.status(502).json({ error: 'ไม่สามารถดึงวีดีโอจาก Google Drive ได้ ตรวจสอบการแชร์ไฟล์เป็น "ทุกคนที่มีลิงก์"' });
     }
 
+    // Mirror the upstream status (206 for partial content, 200 for full).
+    res.status(response.status);
     res.setHeader('Content-Type', response.headers.get('content-type') || 'video/mp4');
-    res.setHeader('Accept-Ranges', 'bytes');
-    if (response.headers.get('content-length')) {
-      res.setHeader('Content-Length', response.headers.get('content-length'));
-    }
-    if (response.headers.get('content-range')) {
-      res.setHeader('Content-Range', response.headers.get('content-range'));
-      res.status(206);
+    res.setHeader('Accept-Ranges', response.headers.get('accept-ranges') || 'bytes');
+    res.setHeader('Cache-Control', 'no-store');
+
+    const contentLength = response.headers.get('content-length');
+    if (contentLength) res.setHeader('Content-Length', contentLength);
+
+    const contentRange = response.headers.get('content-range');
+    if (contentRange) res.setHeader('Content-Range', contentRange);
+
+    if (!response.body) {
+      return res.end();
     }
 
-    Readable.fromWeb(response.body).pipe(res);
+    const nodeStream = Readable.fromWeb(response.body);
+    // Avoid "write after end" crashes if the client (browser) aborts mid-seek.
+    req.on('close', () => nodeStream.destroy());
+    nodeStream.on('error', (err) => {
+      if (err.code !== 'ERR_STREAM_PREMATURE_CLOSE') {
+        console.error('Stream pipe error:', err.message);
+      }
+      res.destroy();
+    });
+    nodeStream.pipe(res);
   } catch (error) {
     console.error('Stream error:', error);
-    res.status(500).json({ error: 'ไม่สามารถสตรีมวีดีโอได้' });
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'ไม่สามารถสตรีมวีดีโอได้' });
+    }
   }
+});
+
+// Reorder videos within a classroom (admin)
+router.put('/classroom/:classroomId/reorder', requireAdmin, (req, res) => {
+  const { classroomId } = req.params;
+  const { order } = req.body; // array of video ids in the desired order
+
+  if (!Array.isArray(order)) {
+    return res.status(400).json({ error: 'รูปแบบลำดับไม่ถูกต้อง' });
+  }
+
+  const classroom = db.getClassroomById(classroomId);
+  if (!classroom) {
+    return res.status(404).json({ error: 'ไม่พบกลุ่มนี้' });
+  }
+
+  order.forEach((videoId, idx) => {
+    const v = db.getVideoById(videoId);
+    if (v && v.classroom_id === classroomId) {
+      db.updateVideo(videoId, { order_index: idx + 1 });
+    }
+  });
+
+  res.json({ videos: db.getVideosByClassroom(classroomId) });
 });
 
 // Get video info (public - for students with code)

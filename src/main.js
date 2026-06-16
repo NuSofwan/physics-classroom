@@ -1,5 +1,5 @@
 import './styles/main.css';
-import { getHashPath, navigateTo, isAdmin } from './utils.js';
+import { getHashPath, navigateTo, isAdmin, runCleanups } from './utils.js';
 
 // Page imports
 import { renderHome, initHome } from './pages/home.js';
@@ -13,6 +13,9 @@ const app = document.getElementById('app');
 
 // ── Router ──
 async function router() {
+  // Dispose any listeners/timers the previous page registered.
+  runCleanups();
+
   const path = getHashPath();
   const parts = path.split('/').filter(Boolean);
 

@@ -42,8 +42,27 @@ export function isAdmin() {
 }
 
 export function logout() {
+  // Best-effort server-side invalidation; navigate regardless.
+  api('/auth/logout', { method: 'POST' }).catch(() => {});
   localStorage.removeItem('admin_token');
   navigateTo('/');
+}
+
+// ── Route cleanup registry ──
+// Pages register teardown callbacks (e.g. to remove document-level event
+// listeners) so the SPA router can dispose them before rendering the next view.
+let cleanups = [];
+
+export function registerCleanup(fn) {
+  if (typeof fn === 'function') cleanups.push(fn);
+}
+
+export function runCleanups() {
+  const pending = cleanups;
+  cleanups = [];
+  pending.forEach((fn) => {
+    try { fn(); } catch { /* ignore teardown errors */ }
+  });
 }
 
 // ── Classroom Code (student session) ──

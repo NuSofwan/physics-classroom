@@ -1,12 +1,66 @@
-// Simple admin authentication middleware
-// Uses a session token stored in memory (resets on server restart)
+// Simple admin authentication middleware.
+// Sessions are persisted to disk so a server restart (e.g. after a deploy)
+// does not silently log the admin out.
 
-const activeSessions = new Map();
+import { randomUUID } from 'crypto';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const SESSION_TTL = 1000 * 60 * 60 * 24 * 30; // 30 days
+const sessionFile = path.join(__dirname, '..', '..', 'data', 'sessions.json');
+
+function loadSessions() {
+  try {
+    if (fs.existsSync(sessionFile)) {
+      return JSON.parse(fs.readFileSync(sessionFile, 'utf-8'));
+    }
+  } catch {
+    /* ignore corrupt session file */
+  }
+  return {};
+}
+
+function saveSessions(sessions) {
+  try {
+    fs.mkdirSync(path.dirname(sessionFile), { recursive: true });
+    fs.writeFileSync(sessionFile, JSON.stringify(sessions), 'utf-8');
+  } catch (err) {
+    console.error('Could not persist sessions:', err.message);
+  }
+}
+
+// token -> createdAt (ms)
+let activeSessions = loadSessions();
+
+function pruneExpired() {
+  const now = Date.now();
+  let changed = false;
+  for (const [token, createdAt] of Object.entries(activeSessions)) {
+    if (now - createdAt > SESSION_TTL) {
+      delete activeSessions[token];
+      changed = true;
+    }
+  }
+  if (changed) saveSessions(activeSessions);
+}
 
 export function createSession() {
-  const token = crypto.randomUUID();
-  activeSessions.set(token, { createdAt: Date.now() });
+  pruneExpired();
+  const token = randomUUID();
+  activeSessions[token] = Date.now();
+  saveSessions(activeSessions);
   return token;
+}
+
+export function destroySession(token) {
+  if (activeSessions[token]) {
+    delete activeSessions[token];
+    saveSessions(activeSessions);
+  }
 }
 
 export function requireAdmin(req, res, next) {
@@ -16,7 +70,10 @@ export function requireAdmin(req, res, next) {
   }
 
   const token = authHeader.split(' ')[1];
-  if (!activeSessions.has(token)) {
+  const createdAt = activeSessions[token];
+
+  if (!createdAt || Date.now() - createdAt > SESSION_TTL) {
+    if (createdAt) destroySession(token);
     return res.status(401).json({ error: 'Session หมดอายุ กรุณาเข้าสู่ระบบใหม่' });
   }
 

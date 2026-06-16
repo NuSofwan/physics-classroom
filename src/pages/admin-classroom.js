@@ -27,10 +27,10 @@ export function renderAdminClassroom() {
       </div>
     </div>
 
-    <!-- Add Video Modal -->
+    <!-- Add / Edit Video Modal -->
     <div class="modal-overlay" id="add-video-modal">
       <div class="modal">
-        <h2 class="modal-title">🎬 เพิ่มวีดีโอ</h2>
+        <h2 class="modal-title" id="video-modal-title">🎬 เพิ่มวีดีโอ</h2>
         <p class="modal-subtitle">คัดลอก File ID จาก Google Drive URL มาวาง</p>
 
         <div class="form-group">
@@ -47,8 +47,15 @@ export function renderAdminClassroom() {
             style="font-family: monospace; font-size: 0.85rem;"
           />
           <span class="form-hint">
-            จาก URL: https://drive.google.com/file/d/<b>FILE_ID</b>/view → คัดลอกส่วน FILE_ID
+            วางลิงก์เต็มก็ได้ เช่น https://drive.google.com/file/d/<b>FILE_ID</b>/view — ระบบจะดึง FILE_ID ให้อัตโนมัติ
           </span>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">ความยาว (ไม่จำเป็น)</label>
+          <input type="text" class="form-input" id="video-duration"
+            placeholder="เช่น 15:30"
+          />
         </div>
 
         <div class="form-group">
@@ -62,6 +69,7 @@ export function renderAdminClassroom() {
           <button class="btn btn-primary" id="btn-add-video" style="flex:1">เพิ่มวีดีโอ</button>
           <button class="btn btn-secondary" id="btn-cancel-video">ยกเลิก</button>
         </div>
+        <input type="hidden" id="edit-video-id" value="" />
       </div>
     </div>
   `;
@@ -136,18 +144,25 @@ async function loadClassroomDetail(classroomId, navigateTo, modal) {
           </h3>
           <div class="video-list">
             ${videos.map((v, i) => `
-              <div class="admin-video-item">
+              <div class="admin-video-item" data-id="${v.id}">
                 <div class="video-number">${i + 1}</div>
-                <div style="flex:1;">
+                <div class="reorder-controls">
+                  <button class="reorder-btn move-up-btn" data-id="${v.id}" title="เลื่อนขึ้น" ${i === 0 ? 'disabled' : ''}>▲</button>
+                  <button class="reorder-btn move-down-btn" data-id="${v.id}" title="เลื่อนลง" ${i === videos.length - 1 ? 'disabled' : ''}>▼</button>
+                </div>
+                <div style="flex:1; min-width:0;">
                   <div class="video-title">${escapeHtml(v.title)}</div>
-                  <div style="font-size: 0.8rem; color: var(--text-muted); margin-top:4px;">
-                    ID: ${v.google_drive_file_id.substring(0, 20)}...
-                    ${v.description ? ` · ${escapeHtml(v.description).substring(0, 50)}` : ''}
+                  <div style="font-size: 0.8rem; color: var(--text-muted); margin-top:4px; word-break:break-all;">
+                    ${v.duration ? `⏱ ${escapeHtml(v.duration)} · ` : ''}ID: ${escapeHtml(v.google_drive_file_id.substring(0, 16))}…
+                    ${v.description ? ` · ${escapeHtml(v.description.substring(0, 50))}` : ''}
                   </div>
                 </div>
                 <div class="video-actions">
                   <button class="btn btn-ghost btn-sm preview-video-btn" data-id="${v.id}" data-code="${classroom.code}" title="ดูตัวอย่าง">
                     ▶️
+                  </button>
+                  <button class="btn btn-ghost btn-sm edit-video-btn" data-id="${v.id}" title="แก้ไข">
+                    ✏️
                   </button>
                   <button class="btn btn-danger btn-sm delete-video-btn" data-id="${v.id}" data-title="${escapeHtml(v.title)}" title="ลบ">
                     🗑️
@@ -171,10 +186,28 @@ async function loadClassroomDetail(classroomId, navigateTo, modal) {
       copyToClipboard(link);
     });
 
+    const titleInput = document.getElementById('video-title');
+    const fileIdInput = document.getElementById('video-file-id');
+    const durationInput = document.getElementById('video-duration');
+    const descInput = document.getElementById('video-description');
+    const editIdInput = document.getElementById('edit-video-id');
+
+    function resetForm() {
+      editIdInput.value = '';
+      titleInput.value = '';
+      fileIdInput.value = '';
+      durationInput.value = '';
+      descInput.value = '';
+    }
+
     // Show add video modal
     const showAddModal = () => {
+      resetForm();
+      document.getElementById('video-modal-title').textContent = '🎬 เพิ่มวีดีโอ';
+      document.getElementById('btn-add-video').textContent = 'เพิ่มวีดีโอ';
+      fileIdInput.removeAttribute('disabled');
       modal.classList.add('active');
-      setTimeout(() => document.getElementById('video-title').focus(), 100);
+      setTimeout(() => titleInput.focus(), 100);
     };
 
     document.getElementById('btn-show-add-video').addEventListener('click', showAddModal);
@@ -184,11 +217,13 @@ async function loadClassroomDetail(classroomId, navigateTo, modal) {
       firstVideoBtn.addEventListener('click', showAddModal);
     }
 
-    // Add video submit
+    // Add / edit video submit
     document.getElementById('btn-add-video').addEventListener('click', async () => {
-      const title = document.getElementById('video-title').value.trim();
-      const fileId = document.getElementById('video-file-id').value.trim();
-      const description = document.getElementById('video-description').value.trim();
+      const title = titleInput.value.trim();
+      const fileId = fileIdInput.value.trim();
+      const duration = durationInput.value.trim();
+      const description = descInput.value.trim();
+      const editId = editIdInput.value;
 
       if (!title || !fileId) {
         showToast('กรุณาระบุชื่อและ File ID', 'error');
@@ -196,24 +231,22 @@ async function loadClassroomDetail(classroomId, navigateTo, modal) {
       }
 
       try {
-        await api(`/videos/classroom/${classroomId}`, {
-          method: 'POST',
-          body: JSON.stringify({
-            title,
-            google_drive_file_id: fileId,
-            description,
-          }),
-        });
+        if (editId) {
+          await api(`/videos/${editId}`, {
+            method: 'PUT',
+            body: JSON.stringify({ title, google_drive_file_id: fileId, duration, description }),
+          });
+          showToast('บันทึกการแก้ไขแล้ว', 'success');
+        } else {
+          await api(`/videos/classroom/${classroomId}`, {
+            method: 'POST',
+            body: JSON.stringify({ title, google_drive_file_id: fileId, duration, description }),
+          });
+          showToast('เพิ่มวีดีโอสำเร็จ!', 'success');
+        }
 
-        showToast('เพิ่มวีดีโอสำเร็จ!', 'success');
         modal.classList.remove('active');
-
-        // Reset form
-        document.getElementById('video-title').value = '';
-        document.getElementById('video-file-id').value = '';
-        document.getElementById('video-description').value = '';
-
-        // Reload
+        resetForm();
         await loadClassroomDetail(classroomId, navigateTo, modal);
       } catch (err) {
         showToast(err.message, 'error');
@@ -224,6 +257,53 @@ async function loadClassroomDetail(classroomId, navigateTo, modal) {
     container.querySelectorAll('.preview-video-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         navigateTo(`/watch/${btn.dataset.id}/${btn.dataset.code}`);
+      });
+    });
+
+    // Edit video buttons
+    container.querySelectorAll('.edit-video-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const v = videos.find(x => x.id === btn.dataset.id);
+        if (!v) return;
+        editIdInput.value = v.id;
+        titleInput.value = v.title;
+        fileIdInput.value = v.google_drive_file_id;
+        durationInput.value = v.duration || '';
+        descInput.value = v.description || '';
+        document.getElementById('video-modal-title').textContent = '✏️ แก้ไขวีดีโอ';
+        document.getElementById('btn-add-video').textContent = 'บันทึก';
+        modal.classList.add('active');
+        setTimeout(() => titleInput.focus(), 100);
+      });
+    });
+
+    // Reorder helpers
+    const reorder = async (fromIdx, toIdx) => {
+      if (toIdx < 0 || toIdx >= videos.length) return;
+      const ids = videos.map(v => v.id);
+      const [moved] = ids.splice(fromIdx, 1);
+      ids.splice(toIdx, 0, moved);
+      try {
+        await api(`/videos/classroom/${classroomId}/reorder`, {
+          method: 'PUT',
+          body: JSON.stringify({ order: ids }),
+        });
+        await loadClassroomDetail(classroomId, navigateTo, modal);
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    };
+
+    container.querySelectorAll('.move-up-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = videos.findIndex(v => v.id === btn.dataset.id);
+        reorder(idx, idx - 1);
+      });
+    });
+    container.querySelectorAll('.move-down-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = videos.findIndex(v => v.id === btn.dataset.id);
+        reorder(idx, idx + 1);
       });
     });
 

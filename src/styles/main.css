@@ -3,7 +3,7 @@
    Premium Dark Theme with Glassmorphism
    ============================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+Thai:wght@300;400;500;600;700&display=swap');
+/* Fonts are loaded non-render-blocking via <link> tags in index.html. */
 
 /* ── CSS Variables ── */
 :root {
@@ -1246,6 +1246,121 @@ h3 { font-size: 1.25rem; }
   50% { opacity: 0.5; }
 }
 
+/* ── Keyboard shortcut hint ── */
+.shortcuts-hint kbd {
+  background: var(--bg-glass);
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+}
+
+/* ── Buffering spinner overlay ── */
+.buffer-spinner {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.buffer-spinner.show {
+  display: flex;
+}
+
+.buffer-spinner .spinner {
+  width: 56px;
+  height: 56px;
+  border-width: 4px;
+}
+
+/* ── Double-tap seek zones (mobile) ── */
+.tap-zone {
+  position: absolute;
+  top: 0;
+  bottom: 70px;
+  width: 30%;
+  z-index: 3;
+  display: none;
+}
+
+.tap-zone.left { left: 0; }
+.tap-zone.right { right: 0; }
+
+/* ── Prev / Next playlist navigation ── */
+.player-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  margin-top: var(--space-xl);
+}
+
+.player-nav:empty {
+  display: none;
+}
+
+.player-nav-pos {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ── Admin reorder controls ── */
+.reorder-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.reorder-btn {
+  background: var(--bg-glass);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  width: 28px;
+  height: 22px;
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.reorder-btn:hover:not(:disabled) {
+  background: var(--bg-glass-hover);
+  color: var(--text-primary);
+}
+
+.reorder-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* ── Watched badge on thumbnails ── */
+.watched-badge {
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+  background: rgba(124, 92, 252, 0.9);
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  z-index: 2;
+}
+
+/* ── Safe-area insets (notch / home indicator) ── */
+.navbar-inner {
+  padding-left: max(var(--space-lg), env(safe-area-inset-left));
+  padding-right: max(var(--space-lg), env(safe-area-inset-right));
+}
+
 /* ── Responsive ── */
 @media (max-width: 768px) {
   h1 { font-size: 1.75rem; }
@@ -1295,13 +1410,67 @@ h3 { font-size: 1.25rem; }
     padding: var(--space-sm);
   }
 
+  /* Bigger, finger-friendly controls; keep them on one row. */
   .controls-row {
-    flex-wrap: wrap;
-    gap: var(--space-xs);
+    gap: 2px;
+  }
+
+  .control-btn {
+    padding: 10px;
+    font-size: 1.4rem;
+  }
+
+  .control-btn.play-btn {
+    font-size: 1.6rem;
   }
 
   .time-display {
-    font-size: 0.75rem;
+    font-size: 0.7rem;
+  }
+
+  /* On touch devices the hover-to-reveal volume slider is unusable: hide the
+     inline slider and rely on the mute button + hardware volume keys. */
+  .volume-slider {
+    display: none;
+  }
+
+  /* Enable double-tap-to-seek zones on touch screens. */
+  .tap-zone {
+    display: block;
+  }
+
+  /* Larger progress hit area for touch scrubbing. */
+  .progress-container {
+    height: 6px;
+    margin-bottom: var(--space-sm);
+  }
+
+  .progress-container:hover {
+    height: 10px;
+  }
+
+  .player-info {
+    margin-top: var(--space-lg);
+  }
+
+  .player-nav .btn {
+    padding: 10px 14px;
+    font-size: 0.85rem;
+  }
+
+  .admin-video-item {
+    flex-wrap: wrap;
+  }
+
+  .admin-video-item .video-actions {
+    margin-left: 0;
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  /* Hide the keyboard-shortcuts card on phones — no physical keyboard. */
+  .shortcuts-hint {
+    display: none;
   }
 }
 
@@ -1313,4 +1482,14 @@ h3 { font-size: 1.25rem; }
   .video-player-wrapper {
     border-radius: var(--radius-md);
   }
+
+  .skip-indicator.left { left: 10%; }
+  .skip-indicator.right { right: 10%; }
+}
+
+/* Landscape phones: let the player fill the screen height. */
+@media (max-height: 480px) and (orientation: landscape) {
+  .navbar { display: none; }
+  .player-container { padding: 0; max-width: 100%; }
+  .video-player-wrapper { border-radius: 0; aspect-ratio: auto; height: 100vh; }
 }

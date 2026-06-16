@@ -4,7 +4,7 @@ const COVER_COLORS = [
   '#6366f1', '#8b5cf6', '#a855f7', '#d946ef',
   '#ec4899', '#f43f5e', '#ef4444', '#f97316',
   '#eab308', '#22c55e', '#14b8a6', '#06b6d4',
-  '#3b82f6', '#6366f1',
+  '#3b82f6', '#0ea5e9',
 ];
 
 export function renderAdminDashboard() {
@@ -51,10 +51,10 @@ export function renderAdminDashboard() {
       </div>
     </div>
 
-    <!-- New Classroom Modal -->
+    <!-- New / Edit Classroom Modal -->
     <div class="modal-overlay" id="new-classroom-modal">
       <div class="modal">
-        <h2 class="modal-title">✨ สร้างกลุ่มใหม่</h2>
+        <h2 class="modal-title" id="classroom-modal-title">✨ สร้างกลุ่มใหม่</h2>
         <p class="modal-subtitle">สร้างห้องเรียนสำหรับจัดกลุ่มวีดีโอ</p>
 
         <div class="form-group">
@@ -87,6 +87,7 @@ export function renderAdminDashboard() {
           <button class="btn btn-primary" id="btn-create-classroom" style="flex:1">สร้างกลุ่ม</button>
           <button class="btn btn-secondary" id="btn-cancel-classroom">ยกเลิก</button>
         </div>
+        <input type="hidden" id="edit-classroom-id" value="" />
       </div>
     </div>
   `;
@@ -99,14 +100,45 @@ export async function initAdminDashboard(navigateTo) {
   // Load classrooms
   await loadClassrooms(navigateTo);
 
-  // New classroom modal
+  // New / edit classroom modal
   const modal = document.getElementById('new-classroom-modal');
   let selectedColor = '#6366f1';
 
-  document.getElementById('btn-new-classroom').addEventListener('click', () => {
+  function setSelectedColor(color) {
+    selectedColor = color;
+    document.querySelectorAll('.color-swatch').forEach((s) => {
+      const match = s.dataset.color === color;
+      s.style.borderColor = match ? 'white' : 'transparent';
+      s.classList.toggle('selected', match);
+    });
+  }
+
+  function openCreateModal() {
+    document.getElementById('edit-classroom-id').value = '';
+    document.getElementById('classroom-modal-title').textContent = '✨ สร้างกลุ่มใหม่';
+    document.getElementById('btn-create-classroom').textContent = 'สร้างกลุ่ม';
+    document.getElementById('new-classroom-name').value = '';
+    document.getElementById('new-classroom-desc').value = '';
+    setSelectedColor('#6366f1');
     modal.classList.add('active');
     setTimeout(() => document.getElementById('new-classroom-name').focus(), 100);
-  });
+  }
+
+  function openEditModal(c) {
+    document.getElementById('edit-classroom-id').value = c.id;
+    document.getElementById('classroom-modal-title').textContent = '✏️ แก้ไขกลุ่ม';
+    document.getElementById('btn-create-classroom').textContent = 'บันทึก';
+    document.getElementById('new-classroom-name').value = c.name;
+    document.getElementById('new-classroom-desc').value = c.description || '';
+    setSelectedColor(c.cover_color || '#6366f1');
+    modal.classList.add('active');
+    setTimeout(() => document.getElementById('new-classroom-name').focus(), 100);
+  }
+
+  // Expose for card edit buttons rendered later.
+  window.__openEditClassroom = openEditModal;
+
+  document.getElementById('btn-new-classroom').addEventListener('click', openCreateModal);
 
   document.getElementById('btn-cancel-classroom').addEventListener('click', () => {
     modal.classList.remove('active');
@@ -120,20 +152,14 @@ export async function initAdminDashboard(navigateTo) {
   document.getElementById('color-picker').addEventListener('click', (e) => {
     const swatch = e.target.closest('[data-color]');
     if (!swatch) return;
-
-    document.querySelectorAll('.color-swatch').forEach(s => {
-      s.style.borderColor = 'transparent';
-      s.classList.remove('selected');
-    });
-    swatch.style.borderColor = 'white';
-    swatch.classList.add('selected');
-    selectedColor = swatch.dataset.color;
+    setSelectedColor(swatch.dataset.color);
   });
 
-  // Create classroom
+  // Create / update classroom
   document.getElementById('btn-create-classroom').addEventListener('click', async () => {
     const name = document.getElementById('new-classroom-name').value.trim();
     const description = document.getElementById('new-classroom-desc').value.trim();
+    const editId = document.getElementById('edit-classroom-id').value;
 
     if (!name) {
       showToast('กรุณาระบุชื่อกลุ่ม', 'error');
@@ -141,19 +167,21 @@ export async function initAdminDashboard(navigateTo) {
     }
 
     try {
-      await api('/classrooms', {
-        method: 'POST',
-        body: JSON.stringify({ name, description, cover_color: selectedColor }),
-      });
+      if (editId) {
+        await api(`/classrooms/${editId}`, {
+          method: 'PUT',
+          body: JSON.stringify({ name, description, cover_color: selectedColor }),
+        });
+        showToast('บันทึกการแก้ไขแล้ว', 'success');
+      } else {
+        await api('/classrooms', {
+          method: 'POST',
+          body: JSON.stringify({ name, description, cover_color: selectedColor }),
+        });
+        showToast('สร้างกลุ่มสำเร็จ!', 'success');
+      }
 
-      showToast('สร้างกลุ่มสำเร็จ!', 'success');
       modal.classList.remove('active');
-
-      // Reset form
-      document.getElementById('new-classroom-name').value = '';
-      document.getElementById('new-classroom-desc').value = '';
-
-      // Reload
       await loadClassrooms(navigateTo);
     } catch (err) {
       showToast(err.message, 'error');
@@ -204,7 +232,10 @@ async function loadClassrooms(navigateTo) {
               <button class="btn btn-secondary btn-sm copy-link-btn" data-code="${c.code}" style="flex:1;">
                 🔗 คัดลอกลิงก์
               </button>
-              <button class="btn btn-danger btn-sm delete-classroom-btn" data-id="${c.id}" data-name="${escapeHtml(c.name)}">
+              <button class="btn btn-secondary btn-sm edit-classroom-btn" data-id="${c.id}" title="แก้ไข">
+                ✏️
+              </button>
+              <button class="btn btn-danger btn-sm delete-classroom-btn" data-id="${c.id}" data-name="${escapeHtml(c.name)}" title="ลบ">
                 🗑️
               </button>
             </div>
@@ -229,6 +260,15 @@ async function loadClassrooms(navigateTo) {
         const code = btn.dataset.code;
         const link = `${window.location.origin}${window.location.pathname}#/join/${code}`;
         copyToClipboard(link);
+      });
+    });
+
+    // Edit buttons
+    container.querySelectorAll('.edit-classroom-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const c = classrooms.find(x => x.id === btn.dataset.id);
+        if (c && window.__openEditClassroom) window.__openEditClassroom(c);
       });
     });
 

@@ -1,8 +1,17 @@
 import { Router } from 'express';
-import { createSession } from '../middleware/auth.js';
+import { createSession, destroySession } from '../middleware/auth.js';
 import db from '../db.js';
 
 const router = Router();
+
+// Admin logout - invalidate the current session token
+router.post('/logout', (req, res) => {
+  const authHeader = req.headers.authorization || '';
+  if (authHeader.startsWith('Bearer ')) {
+    destroySession(authHeader.split(' ')[1]);
+  }
+  res.json({ message: 'ออกจากระบบแล้ว' });
+});
 
 // Admin login
 router.post('/admin-login', (req, res) => {
