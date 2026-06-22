@@ -91,17 +91,88 @@ export async function initAdminClassroom(navigateTo, classroomId) {
   // Auto-extract file ID from full Google Drive URL
   document.getElementById('video-file-id').addEventListener('paste', (e) => {
     setTimeout(() => {
-      const val = e.target.value;
-      // Match file ID from various Google Drive URL formats
-      const match = val.match(/\/d\/([a-zA-Z0-9_-]+)/);
-      if (match) {
-        e.target.value = match[1];
+      const { id } = extractFileId(e.target.value);
+      if (id && id !== e.target.value.trim()) {
+        e.target.value = id;
         showToast('File ID ถูกคัดลอกจาก URL อัตโนมัติ', 'info');
       }
     }, 50);
   });
 
+  // Add / edit video submit — registered ONCE here. It must NOT live inside
+  // loadClassroomDetail(), which re-runs after every add/edit/delete/reorder:
+  // the submit button lives in the static modal (never re-rendered), so a
+  // listener added there each reload would stack up and fire one click as
+  // many POSTs — that is what created the 9 duplicate videos.
+  const submitBtn = document.getElementById('btn-add-video');
+  submitBtn.addEventListener('click', async () => {
+    const titleInput = document.getElementById('video-title');
+    const fileIdInput = document.getElementById('video-file-id');
+    const durationInput = document.getElementById('video-duration');
+    const descInput = document.getElementById('video-description');
+    const editIdInput = document.getElementById('edit-video-id');
+
+    const title = titleInput.value.trim();
+    const duration = durationInput.value.trim();
+    const description = descInput.value.trim();
+    const editId = editIdInput.value;
+
+    if (!title) {
+      showToast('กรุณาระบุชื่อวีดีโอ', 'error');
+      return;
+    }
+
+    const { id: fileId, error } = extractFileId(fileIdInput.value);
+    if (error) {
+      showToast(error, 'error');
+      return;
+    }
+
+    submitBtn.disabled = true;
+    try {
+      if (editId) {
+        await api(`/videos/${editId}`, {
+          method: 'PUT',
+          body: JSON.stringify({ title, google_drive_file_id: fileId, duration, description }),
+        });
+        showToast('บันทึกการแก้ไขแล้ว', 'success');
+      } else {
+        await api(`/videos/classroom/${classroomId}`, {
+          method: 'POST',
+          body: JSON.stringify({ title, google_drive_file_id: fileId, duration, description }),
+        });
+        showToast('เพิ่มวีดีโอสำเร็จ!', 'success');
+      }
+
+      modal.classList.remove('active');
+      editIdInput.value = '';
+      titleInput.value = '';
+      fileIdInput.value = '';
+      durationInput.value = '';
+      descInput.value = '';
+      await loadClassroomDetail(classroomId, navigateTo, modal);
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+
   await loadClassroomDetail(classroomId, navigateTo, modal);
+}
+
+// Pull a Google Drive *file* ID out of whatever the user pasted. Rejects
+// folder links (which are not playable) and obviously-invalid input.
+function extractFileId(input) {
+  const s = (input || '').trim();
+  if (!s) return { error: 'กรุณาวางลิงก์หรือ File ID ของวีดีโอ' };
+  if (/\/folders\//.test(s)) {
+    return { error: 'นี่เป็นลิงก์โฟลเดอร์ ไม่ใช่ไฟล์วีดีโอ — เปิดไฟล์วีดีโอแล้วคัดลอกลิงก์ของไฟล์ (แบบ /file/d/.../view)' };
+  }
+  const m = s.match(/\/d\/([a-zA-Z0-9_-]+)/) || s.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (m) return { id: m[1] };
+  if (/^[a-zA-Z0-9_-]{10,}$/.test(s)) return { id: s }; // already a bare ID
+  return { error: 'ลิงก์หรือ File ID ไม่ถูกต้อง' };
 }
 
 async function loadClassroomDetail(classroomId, navigateTo, modal) {
@@ -192,17 +263,13 @@ async function loadClassroomDetail(classroomId, navigateTo, modal) {
     const descInput = document.getElementById('video-description');
     const editIdInput = document.getElementById('edit-video-id');
 
-    function resetForm() {
+    // Show add video modal (the submit handler is bound once in initAdminClassroom)
+    const showAddModal = () => {
       editIdInput.value = '';
       titleInput.value = '';
       fileIdInput.value = '';
       durationInput.value = '';
       descInput.value = '';
-    }
-
-    // Show add video modal
-    const showAddModal = () => {
-      resetForm();
       document.getElementById('video-modal-title').textContent = '🎬 เพิ่มวีดีโอ';
       document.getElementById('btn-add-video').textContent = 'เพิ่มวีดีโอ';
       fileIdInput.removeAttribute('disabled');
@@ -216,42 +283,6 @@ async function loadClassroomDetail(classroomId, navigateTo, modal) {
     if (firstVideoBtn) {
       firstVideoBtn.addEventListener('click', showAddModal);
     }
-
-    // Add / edit video submit
-    document.getElementById('btn-add-video').addEventListener('click', async () => {
-      const title = titleInput.value.trim();
-      const fileId = fileIdInput.value.trim();
-      const duration = durationInput.value.trim();
-      const description = descInput.value.trim();
-      const editId = editIdInput.value;
-
-      if (!title || !fileId) {
-        showToast('กรุณาระบุชื่อและ File ID', 'error');
-        return;
-      }
-
-      try {
-        if (editId) {
-          await api(`/videos/${editId}`, {
-            method: 'PUT',
-            body: JSON.stringify({ title, google_drive_file_id: fileId, duration, description }),
-          });
-          showToast('บันทึกการแก้ไขแล้ว', 'success');
-        } else {
-          await api(`/videos/classroom/${classroomId}`, {
-            method: 'POST',
-            body: JSON.stringify({ title, google_drive_file_id: fileId, duration, description }),
-          });
-          showToast('เพิ่มวีดีโอสำเร็จ!', 'success');
-        }
-
-        modal.classList.remove('active');
-        resetForm();
-        await loadClassroomDetail(classroomId, navigateTo, modal);
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
-    });
 
     // Preview video buttons
     container.querySelectorAll('.preview-video-btn').forEach(btn => {
