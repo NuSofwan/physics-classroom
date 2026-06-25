@@ -12,7 +12,7 @@ if (!fs.existsSync(dataDir)) {
 }
 
 const dbPath = path.join(dataDir, 'physics-classroom.json');
-const defaultData = { classrooms: [], videos: [] };
+const defaultData = { classrooms: [], videos: [], sections: [] };
 
 // ─────────────────────────────────────────────────────────────────────────
 // File backend (used for local dev when MONGODB_URI is not set).
@@ -103,6 +103,49 @@ const fileBackend = {
     if (videos.length === 0) return 0;
     return Math.max(...videos.map((v) => v.order_index || 0));
   },
+  async getSectionsByClassroom(classroomId) {
+    const data = loadData();
+    return (data.sections || [])
+      .filter((s) => s.classroom_id === classroomId)
+      .sort((a, b) => a.order_index - b.order_index || new Date(a.created_at) - new Date(b.created_at));
+  },
+  async getSectionById(id) {
+    return (loadData().sections || []).find((s) => s.id === id) || null;
+  },
+  async createSection(section) {
+    const data = loadData();
+    if (!data.sections) data.sections = [];
+    data.sections.push(section);
+    saveData(data);
+    return section;
+  },
+  async updateSection(id, updates) {
+    const data = loadData();
+    if (!data.sections) data.sections = [];
+    const idx = data.sections.findIndex((s) => s.id === id);
+    if (idx === -1) return null;
+    data.sections[idx] = { ...data.sections[idx], ...updates, updated_at: new Date().toISOString() };
+    saveData(data);
+    return data.sections[idx];
+  },
+  async deleteSection(id) {
+    const data = loadData();
+    data.sections = (data.sections || []).filter((s) => s.id !== id);
+    data.videos = data.videos.map((v) => v.section_id === id ? { ...v, section_id: null } : v);
+    saveData(data);
+    return true;
+  },
+  async getMaxSectionOrder(classroomId) {
+    const sections = await this.getSectionsByClassroom(classroomId);
+    if (sections.length === 0) return 0;
+    return Math.max(...sections.map((s) => s.order_index || 0));
+  },
+  async getMaxVideoOrderInSection(classroomId, sectionId) {
+    const data = loadData();
+    const vids = data.videos.filter((v) => v.classroom_id === classroomId && v.section_id === sectionId);
+    if (vids.length === 0) return 0;
+    return Math.max(...vids.map((v) => v.order_index || 0));
+  },
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -112,6 +155,7 @@ function makeMongoBackend(client, dbName) {
   const database = client.db(dbName);
   const classroomsCol = database.collection('classrooms');
   const videosCol = database.collection('videos');
+  const sectionsCol = database.collection('sections');
   const strip = { projection: { _id: 0 } };
 
   return {
@@ -180,7 +224,49 @@ function makeMongoBackend(client, dbName) {
         .toArray();
       return top.length ? top[0].order_index || 0 : 0;
     },
-    _collections: { classroomsCol, videosCol },
+    async getSectionsByClassroom(classroomId) {
+      return sectionsCol
+        .find({ classroom_id: classroomId }, strip)
+        .sort({ order_index: 1, created_at: 1 })
+        .toArray();
+    },
+    async getSectionById(id) {
+      return sectionsCol.findOne({ id }, strip);
+    },
+    async createSection(section) {
+      await sectionsCol.insertOne({ ...section });
+      return section;
+    },
+    async updateSection(id, updates) {
+      const result = await sectionsCol.findOneAndUpdate(
+        { id },
+        { $set: { ...updates, updated_at: new Date().toISOString() } },
+        { returnDocument: 'after', projection: { _id: 0 } }
+      );
+      return result || null;
+    },
+    async deleteSection(id) {
+      await sectionsCol.deleteOne({ id });
+      await videosCol.updateMany({ section_id: id }, { $set: { section_id: null } });
+      return true;
+    },
+    async getMaxSectionOrder(classroomId) {
+      const top = await sectionsCol
+        .find({ classroom_id: classroomId })
+        .sort({ order_index: -1 })
+        .limit(1)
+        .toArray();
+      return top.length ? top[0].order_index || 0 : 0;
+    },
+    async getMaxVideoOrderInSection(classroomId, sectionId) {
+      const top = await videosCol
+        .find({ classroom_id: classroomId, section_id: sectionId })
+        .sort({ order_index: -1 })
+        .limit(1)
+        .toArray();
+      return top.length ? top[0].order_index || 0 : 0;
+    },
+    _collections: { classroomsCol, videosCol, sectionsCol },
   };
 }
 
@@ -210,6 +296,9 @@ export async function initDb() {
       if (seed.videos?.length) {
         await mongo._collections.videosCol.insertMany(seed.videos.map((v) => ({ ...v })));
       }
+      if (seed.sections?.length) {
+        await mongo._collections.sectionsCol.insertMany(seed.sections.map((s) => ({ ...s })));
+      }
       console.log(`🌱 Seeded ${seed.classrooms.length} classroom(s) into MongoDB`);
     }
   }
@@ -232,6 +321,13 @@ const db = {
   updateVideo: (...a) => backend.updateVideo(...a),
   deleteVideo: (...a) => backend.deleteVideo(...a),
   getMaxVideoOrder: (...a) => backend.getMaxVideoOrder(...a),
+  getSectionsByClassroom: (...a) => backend.getSectionsByClassroom(...a),
+  getSectionById: (...a) => backend.getSectionById(...a),
+  createSection: (...a) => backend.createSection(...a),
+  updateSection: (...a) => backend.updateSection(...a),
+  deleteSection: (...a) => backend.deleteSection(...a),
+  getMaxSectionOrder: (...a) => backend.getMaxSectionOrder(...a),
+  getMaxVideoOrderInSection: (...a) => backend.getMaxVideoOrderInSection(...a),
 };
 
 export default db;

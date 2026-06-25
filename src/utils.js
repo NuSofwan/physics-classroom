@@ -114,6 +114,27 @@ export function formatDate(dateStr) {
   });
 }
 
+// Group videos into section buckets, sorted by section order_index.
+// Returns [{ section: {...}|null, videos: [...] }] — ungrouped ("ทั่วไป") is last.
+export function groupVideosBySection(videos, sections) {
+  const byId = new Map(sections.map(s => [s.id, { section: s, videos: [] }]));
+  const ungrouped = { section: null, videos: [] };
+  for (const v of videos) {
+    const bucket = (v.section_id && byId.get(v.section_id)) || ungrouped;
+    bucket.videos.push(v);
+  }
+  const sortVideos = (arr, mode) => arr.sort((a, b) =>
+    mode === 'manual'
+      ? (a.order_index - b.order_index) || (new Date(a.created_at) - new Date(b.created_at))
+      : (new Date(a.created_at) - new Date(b.created_at))
+  );
+  const groups = [...sections]
+    .sort((a, b) => a.order_index - b.order_index)
+    .map(s => { const g = byId.get(s.id); sortVideos(g.videos, s.sort_mode); return g; });
+  if (ungrouped.videos.length) { sortVideos(ungrouped.videos, 'date'); groups.push(ungrouped); }
+  return groups;
+}
+
 export function copyToClipboard(text) {
   navigator.clipboard.writeText(text).then(() => {
     showToast('คัดลอกแล้ว!', 'success');

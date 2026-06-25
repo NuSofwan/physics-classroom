@@ -91,17 +91,23 @@ router.get('/code/:code', async (req, res) => {
     return res.status(404).json({ error: 'ไม่พบกลุ่มที่ตรงกับรหัสนี้' });
   }
 
-  const videos = (await db.getVideosByClassroom(classroom.id)).map(v => ({
+  const [rawVideos, sections] = await Promise.all([
+    db.getVideosByClassroom(classroom.id),
+    db.getSectionsByClassroom(classroom.id),
+  ]);
+
+  const videos = rawVideos.map(v => ({
     id: v.id,
     title: v.title,
     description: v.description,
     duration: v.duration,
     order_index: v.order_index,
     created_at: v.created_at,
+    section_id: v.section_id ?? null,
   }));
 
   const { id, name, description, code: classCode, cover_color } = classroom;
-  res.json({ classroom: { id, name, description, code: classCode, cover_color }, videos });
+  res.json({ classroom: { id, name, description, code: classCode, cover_color }, sections, videos });
 });
 
 export default router;

@@ -1487,6 +1487,117 @@ h3 { font-size: 1.25rem; }
   .skip-indicator.right { right: 10%; }
 }
 
+/* ── Section groups (admin) ────────────────────────────────────────────── */
+.section-group {
+  margin-bottom: var(--space-lg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 10px var(--space-md);
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.ungrouped-header {
+  background: var(--bg-surface);
+}
+
+.section-header-title {
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+}
+
+.section-header-actions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.section-video-list {
+  background: var(--bg-surface);
+}
+
+/* ── Bulk-move action bar (admin) ──────────────────────────────────────── */
+.bulk-action-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  padding: 10px var(--space-md);
+  background: var(--accent);
+  color: #fff;
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-lg);
+}
+
+.bulk-action-bar select {
+  color: var(--text-primary);
+}
+
+/* ── Accordion (student) ───────────────────────────────────────────────── */
+.accordion-section {
+  margin-bottom: var(--space-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.accordion-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  width: 100%;
+  padding: 14px var(--space-md);
+  background: var(--bg-card);
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  transition: background 0.15s;
+}
+
+.accordion-header:hover {
+  background: var(--bg-hover, var(--bg-surface));
+}
+
+.accordion-chevron {
+  font-size: 0.65rem;
+  transition: transform 0.2s;
+  color: var(--text-muted);
+}
+
+.accordion-section.open .accordion-chevron {
+  transform: rotate(90deg);
+}
+
+.accordion-title {
+  flex: 1;
+}
+
+.accordion-count {
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.accordion-body {
+  display: none;
+}
+
+.accordion-section.open .accordion-body {
+  display: block;
+}
+
 /* Landscape phones: let the player fill the screen height. */
 @media (max-height: 480px) and (orientation: landscape) {
   .navbar { display: none; }

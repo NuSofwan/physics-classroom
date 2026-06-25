@@ -8,6 +8,7 @@ import { initDb } from './db.js';
 import authRoutes from './routes/auth.js';
 import classroomRoutes from './routes/classrooms.js';
 import videoRoutes from './routes/videos.js';
+import sectionRoutes from './routes/sections.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,6 +28,7 @@ app.use(express.json());
 app.use('/api/auth', authRoutes);
 app.use('/api/classrooms', classroomRoutes);
 app.use('/api/videos', videoRoutes);
+app.use('/api/sections', sectionRoutes);
 
 // Unknown API routes must not fall through to the SPA handler (which would hang).
 app.use('/api', (req, res) => {

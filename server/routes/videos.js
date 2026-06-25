@@ -15,14 +15,17 @@ router.get('/classroom/:classroomId', requireAdmin, async (req, res) => {
     return res.status(404).json({ error: 'ไม่พบกลุ่มนี้' });
   }
 
-  const videos = await db.getVideosByClassroom(classroomId);
-  res.json({ classroom, videos });
+  const [videos, sections] = await Promise.all([
+    db.getVideosByClassroom(classroomId),
+    db.getSectionsByClassroom(classroomId),
+  ]);
+  res.json({ classroom, videos, sections });
 });
 
 // Add video to classroom (admin)
 router.post('/classroom/:classroomId', requireAdmin, async (req, res) => {
   const { classroomId } = req.params;
-  const { title, description, google_drive_file_id, duration } = req.body;
+  const { title, description, google_drive_file_id, duration, section_id } = req.body;
 
   if (!title || !google_drive_file_id) {
     return res.status(400).json({ error: 'กรุณาระบุชื่อวีดีโอและ Google Drive File ID' });
@@ -33,7 +36,13 @@ router.post('/classroom/:classroomId', requireAdmin, async (req, res) => {
     return res.status(404).json({ error: 'ไม่พบกลุ่มนี้' });
   }
 
-  const orderIndex = (await db.getMaxVideoOrder(classroomId)) + 1;
+  const resolvedSectionId = section_id || null;
+  let orderIndex;
+  if (resolvedSectionId) {
+    orderIndex = (await db.getMaxVideoOrderInSection(classroomId, resolvedSectionId)) + 1;
+  } else {
+    orderIndex = (await db.getMaxVideoOrder(classroomId)) + 1;
+  }
 
   const video = {
     id: uuidv4(),
@@ -44,6 +53,7 @@ router.post('/classroom/:classroomId', requireAdmin, async (req, res) => {
     thumbnail_url: `https://drive.google.com/thumbnail?id=${google_drive_file_id.trim()}&sz=w640`,
     duration: duration || '',
     order_index: orderIndex,
+    section_id: resolvedSectionId,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
@@ -55,7 +65,7 @@ router.post('/classroom/:classroomId', requireAdmin, async (req, res) => {
 // Update video (admin)
 router.put('/:id', requireAdmin, async (req, res) => {
   const { id } = req.params;
-  const { title, description, google_drive_file_id, duration, order_index } = req.body;
+  const { title, description, google_drive_file_id, duration, order_index, section_id } = req.body;
 
   const existing = await db.getVideoById(id);
   if (!existing) {
@@ -64,15 +74,21 @@ router.put('/:id', requireAdmin, async (req, res) => {
 
   const newFileId = google_drive_file_id || existing.google_drive_file_id;
 
-  const updated = await db.updateVideo(id, {
+  const updates = {
     title: title || existing.title,
     description: description !== undefined ? description : existing.description,
     google_drive_file_id: newFileId,
     thumbnail_url: `https://drive.google.com/thumbnail?id=${newFileId}&sz=w640`,
     duration: duration || existing.duration,
     order_index: order_index !== undefined ? order_index : existing.order_index,
-  });
+  };
 
+  // section_id can be null (explicit removal from section) — must not be swallowed by ||
+  if (req.body.section_id !== undefined) {
+    updates.section_id = section_id;
+  }
+
+  const updated = await db.updateVideo(id, updates);
   res.json({ video: updated });
 });
 
@@ -180,6 +196,52 @@ router.get('/:id/stream', async (req, res) => {
       res.status(500).json({ error: 'ไม่สามารถสตรีมวีดีโอได้' });
     }
   }
+});
+
+// Move multiple videos into a section (admin)
+router.put('/classroom/:classroomId/move', requireAdmin, async (req, res) => {
+  const { classroomId } = req.params;
+  const { videoIds, section_id } = req.body;
+
+  if (!Array.isArray(videoIds) || videoIds.length === 0) {
+    return res.status(400).json({ error: 'กรุณาระบุ videoIds' });
+  }
+
+  const classroom = await db.getClassroomById(classroomId);
+  if (!classroom) return res.status(404).json({ error: 'ไม่พบกลุ่มนี้' });
+
+  // Validate target section when not null
+  let targetSection = null;
+  if (section_id !== null && section_id !== undefined) {
+    targetSection = await db.getSectionById(section_id);
+    if (!targetSection || targetSection.classroom_id !== classroomId) {
+      return res.status(404).json({ error: 'ไม่พบหมวดนี้ในกลุ่ม' });
+    }
+  }
+
+  // Verify all videos belong to this classroom
+  for (const vid of videoIds) {
+    const v = await db.getVideoById(vid);
+    if (!v || v.classroom_id !== classroomId) {
+      return res.status(400).json({ error: `วีดีโอ ${vid} ไม่อยู่ในกลุ่มนี้` });
+    }
+  }
+
+  let nextOrder = null;
+  if (targetSection?.sort_mode === 'manual') {
+    nextOrder = (await db.getMaxVideoOrderInSection(classroomId, section_id)) + 1;
+  }
+
+  for (const vid of videoIds) {
+    const updates = { section_id: section_id || null };
+    if (nextOrder !== null) {
+      updates.order_index = nextOrder++;
+    }
+    await db.updateVideo(vid, updates);
+  }
+
+  const videos = await db.getVideosByClassroom(classroomId);
+  res.json({ videos });
 });
 
 // Reorder videos within a classroom (admin)
