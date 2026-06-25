@@ -766,6 +766,9 @@ h3 { font-size: 1.25rem; }
   width: 100%;
   height: 100%;
   display: block;
+  /* Preserve the video's real aspect ratio inside the 16:9 frame so portrait
+     or 4:3 recordings (common on phones/iPad) letterbox instead of stretching. */
+  object-fit: contain;
 }
 
 /* Player Controls Overlay */
@@ -1602,5 +1605,21 @@ h3 { font-size: 1.25rem; }
 @media (max-height: 480px) and (orientation: landscape) {
   .navbar { display: none; }
   .player-container { padding: 0; max-width: 100%; }
-  .video-player-wrapper { border-radius: 0; aspect-ratio: auto; height: 100vh; }
+  .video-player-wrapper {
+    border-radius: 0;
+    aspect-ratio: auto;
+    height: 100vh;
+    height: 100dvh; /* dvh excludes the iOS Safari URL bar so the player isn't clipped */
+  }
+}
+
+/* ── Drag and drop to move videos into a section (admin, desktop) ────────── */
+.admin-video-item.dragging {
+  opacity: 0.45;
+}
+
+.section-group.drop-target {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+  background: var(--accent-glow);
 }

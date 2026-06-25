@@ -194,8 +194,9 @@ async function loadClassroomDetail(classroomId, navigateTo, modal) {
     const renderVideoRow = (v, groupVideos, isManual) => {
       const idx = groupVideos.indexOf(v);
       return `
-        <div class="admin-video-item" data-id="${v.id}" data-section="${v.section_id || ''}">
+        <div class="admin-video-item" data-id="${v.id}" data-section="${v.section_id || ''}" draggable="true">
           <input type="checkbox" class="video-select" data-id="${v.id}" style="margin-right:8px; cursor:pointer;">
+          <span class="drag-handle" title="ลากเพื่อย้ายเข้าหมวด">⠿</span>
           <div class="video-number">${idx + 1}</div>
           ${isManual ? `
           <div class="reorder-controls">
@@ -513,6 +514,21 @@ async function loadClassroomDetail(classroomId, navigateTo, modal) {
       bulkBar.style.display = 'none';
     });
 
+    // Shared move helper — used by both the bulk-move button and drag-and-drop.
+    const moveVideos = async (videoIds, targetSectionId) => {
+      if (!videoIds || videoIds.length === 0) return;
+      try {
+        await api(`/videos/classroom/${classroomId}/move`, {
+          method: 'PUT',
+          body: JSON.stringify({ videoIds, section_id: targetSectionId }),
+        });
+        showToast('ย้ายวีดีโอสำเร็จ', 'success');
+        await loadClassroomDetail(classroomId, navigateTo, modal);
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    };
+
     document.getElementById('btn-bulk-move').addEventListener('click', async () => {
       let targetSectionId = bulkSelect.value || null;
 
@@ -532,16 +548,46 @@ async function loadClassroomDetail(classroomId, navigateTo, modal) {
       }
 
       const videoIds = [...container.querySelectorAll('.video-select:checked')].map(cb => cb.dataset.id);
-      try {
-        await api(`/videos/classroom/${classroomId}/move`, {
-          method: 'PUT',
-          body: JSON.stringify({ videoIds, section_id: targetSectionId }),
-        });
-        showToast('ย้ายวีดีโอสำเร็จ', 'success');
-        await loadClassroomDetail(classroomId, navigateTo, modal);
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
+      await moveVideos(videoIds, targetSectionId);
+    });
+
+    // ── Drag-and-drop (desktop enhancement; checkbox + dropdown stays primary
+    //    because HTML5 drag does not work on touch screens) ──
+    let dragIds = [];
+    container.querySelectorAll('.admin-video-item').forEach(row => {
+      row.addEventListener('dragstart', (e) => {
+        const id = row.dataset.id;
+        // If the dragged row is part of a multi-selection, move the whole selection.
+        const checked = [...container.querySelectorAll('.video-select:checked')].map(cb => cb.dataset.id);
+        dragIds = checked.includes(id) ? checked : [id];
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', id);
+        row.classList.add('dragging');
+      });
+      row.addEventListener('dragend', () => {
+        row.classList.remove('dragging');
+        container.querySelectorAll('.section-group.drop-target').forEach(g => g.classList.remove('drop-target'));
+      });
+    });
+
+    container.querySelectorAll('.section-group').forEach(group => {
+      group.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        group.classList.add('drop-target');
+      });
+      group.addEventListener('dragleave', (e) => {
+        if (!group.contains(e.relatedTarget)) group.classList.remove('drop-target');
+      });
+      group.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        group.classList.remove('drop-target');
+        const ds = group.dataset.sectionId;          // section id, or the string 'null' for ungrouped
+        const targetSectionId = ds === 'null' ? null : ds;
+        const ids = dragIds;
+        dragIds = [];
+        await moveVideos(ids, targetSectionId);
+      });
     });
 
   } catch (err) {

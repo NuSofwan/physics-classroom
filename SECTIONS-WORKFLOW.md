@@ -219,7 +219,14 @@ export function groupVideosBySection(videos, sections) {
 
 ---
 
-## Phase 6 (เสริม) — ลากวาง (drag-drop)
+## Phase 6 (เสริม) — ลากวาง (drag-drop)  ✅ เสร็จแล้ว
+
+> ทำเสร็จแล้วใน admin-classroom.js: แถว `.admin-video-item` เป็น `draggable` + มี drag handle (⠿),
+> หัวหมวด/กลุ่มเป็น drop target, ลากแล้วเรียก endpoint move เดิม (ลากทั้ง selection ได้ถ้าติ๊กไว้)
+> checkbox + dropdown ยังเป็นวิธีหลัก (HTML5 drag ใช้บนจอสัมผัสไม่ได้)
+>
+> เพิ่มเติม (มือถือ/iPad): `#video-element { object-fit: contain }` กันวีดีโอสัดส่วนอื่นถูกยืดเพี้ยน,
+> landscape ใช้ `100dvh`, มี `playsinline` + iOS fullscreen fallback อยู่แล้ว
 
 ทำหลัง P1-P5 เสถียรแล้วเท่านั้น
 - ฝั่งแอดมิน: ทำการ์ดวีดีโอ `draggable="true"`, หัวหมวดเป็น drop target
