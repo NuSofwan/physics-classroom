@@ -223,12 +223,18 @@ async function loadClassroomDetail(classroomId, navigateTo, modal) {
       const { section, videos: gVids } = group;
       const isManual = section?.sort_mode === 'manual';
       const isUngrouped = section === null;
+      const sectionKey = section ? section.id : 'ungrouped';
+      // Folders are collapsed by default — this page shows only the folder list;
+      // click a folder header to expand its videos.
+      const isOpen = localStorage.getItem(`admin_sec_open_${sectionKey}`) === '1';
 
       const headerHtml = isUngrouped
         ? `<div class="section-header ungrouped-header">
+             <span class="section-chevron">▶</span>
              <span class="section-header-title">📂 ยังไม่จัดหมวด (${gVids.length})</span>
            </div>`
         : `<div class="section-header" data-section-id="${section.id}">
+             <span class="section-chevron">▶</span>
              <span class="section-header-title">📁 ${escapeHtml(section.name)} (${gVids.length})</span>
              <div class="section-header-actions">
                <button class="btn btn-ghost btn-sm sort-toggle-btn" data-id="${section.id}" data-mode="${section.sort_mode}" title="สลับโหมดเรียง">
@@ -242,7 +248,7 @@ async function loadClassroomDetail(classroomId, navigateTo, modal) {
            </div>`;
 
       return `
-        <div class="section-group" data-section-id="${section?.id || 'null'}">
+        <div class="section-group ${isOpen ? '' : 'collapsed'}" data-section-id="${section?.id || 'null'}">
           ${headerHtml}
           <div class="section-video-list">
             ${gVids.length === 0
@@ -403,6 +409,23 @@ async function loadClassroomDetail(classroomId, navigateTo, modal) {
           await loadClassroomDetail(classroomId, navigateTo, modal);
         } catch (err) {
           showToast(err.message, 'error');
+        }
+      });
+    });
+
+    // Collapse/expand folders — header click toggles, but clicks on the action
+    // buttons (sort/rename/move/delete) must not toggle, so ignore those.
+    container.querySelectorAll('.section-group').forEach(group => {
+      const header = group.querySelector('.section-header');
+      if (!header) return;
+      header.addEventListener('click', (e) => {
+        if (e.target.closest('button')) return;
+        const key = group.dataset.sectionId === 'null' ? 'ungrouped' : group.dataset.sectionId;
+        group.classList.toggle('collapsed');
+        if (group.classList.contains('collapsed')) {
+          localStorage.removeItem(`admin_sec_open_${key}`);
+        } else {
+          localStorage.setItem(`admin_sec_open_${key}`, '1');
         }
       });
     });

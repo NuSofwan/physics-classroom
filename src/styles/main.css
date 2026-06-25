@@ -1506,6 +1506,27 @@ h3 { font-size: 1.25rem; }
   background: var(--bg-card);
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
+  cursor: pointer;
+}
+
+/* Collapsed folders show only the header (this page lists folders first). */
+.section-group.collapsed .section-video-list {
+  display: none;
+}
+
+.section-group.collapsed .section-header {
+  border-bottom: none;
+}
+
+.section-chevron {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  transition: transform 0.2s;
+  flex: none;
+}
+
+.section-group:not(.collapsed) .section-chevron {
+  transform: rotate(90deg);
 }
 
 .ungrouped-header {
